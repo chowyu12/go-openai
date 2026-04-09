@@ -1147,6 +1147,40 @@ func TestChatCompletionResponseFormatJSONSchema_UnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestChatCompletionRequest_ExtraBodyMarshalJSON(t *testing.T) {
+	req := openai.ChatCompletionRequest{
+		Model: "qwen-plus",
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleUser, Content: "hi"},
+		},
+		Stream: true,
+		StreamOptions: &openai.StreamOptions{
+			IncludeUsage: true,
+		},
+		ExtraBody: map[string]any{
+			"enable_thinking": true,
+		},
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, nested := m["extra_body"]; nested {
+		t.Fatal("extra_body must be flattened into the root object")
+	}
+	v, ok := m["enable_thinking"]
+	if !ok || v != true {
+		t.Fatalf("enable_thinking = %v, ok=%v", v, ok)
+	}
+	if m["model"] != "qwen-plus" {
+		t.Fatalf("model = %v", m["model"])
+	}
+}
+
 func TestChatCompletionRequest_UnmarshalJSON(t *testing.T) {
 	type args struct {
 		bs []byte

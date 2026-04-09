@@ -331,8 +331,33 @@ type ChatCompletionRequest struct {
 	// We recommend hashing their username or email address, in order to avoid sending us any identifying information.
 	// https://platform.openai.com/docs/api-reference/chat/create#chat_create-safety_identifier
 	SafetyIdentifier string `json:"safety_identifier,omitempty"`
+	// ExtraBody carries vendor-specific or non-OpenAI parameters (e.g. DashScope
+	// enable_thinking). Values are merged into the root JSON object of the request,
+	// not under a nested "extra_body" key, matching the OpenAI Python SDK extra_body.
+	ExtraBody map[string]any `json:"-"`
 	// Embedded struct for non-OpenAI extensions
 	ChatCompletionRequestExtensions
+}
+
+// MarshalJSON encodes the request and merges ExtraBody into the top-level object.
+func (r ChatCompletionRequest) MarshalJSON() ([]byte, error) {
+	if len(r.ExtraBody) == 0 {
+		type Alias ChatCompletionRequest
+		return json.Marshal(Alias(r))
+	}
+	type Alias ChatCompletionRequest
+	base, err := json.Marshal(Alias(r))
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(base, &m); err != nil {
+		return nil, err
+	}
+	for k, v := range r.ExtraBody {
+		m[k] = v
+	}
+	return json.Marshal(m)
 }
 
 type StreamOptions struct {
