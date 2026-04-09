@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	utils "github.com/sashabaranov/go-openai/internal"
-	"github.com/sashabaranov/go-openai/internal/test"
-	"github.com/sashabaranov/go-openai/internal/test/checks"
+	utils "github.com/chowyu12/go-openai/internal"
+	"github.com/chowyu12/go-openai/internal/test"
+	"github.com/chowyu12/go-openai/internal/test/checks"
 )
 
 func TestAudioWithFailingFormBuilder(t *testing.T) {
