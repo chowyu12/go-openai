@@ -53,6 +53,10 @@ type Definition struct {
 	Ref string `json:"$ref,omitempty"`
 	// Defs A map of reusable schema definitions.
 	Defs map[string]Definition `json:"$defs,omitempty"`
+	// AnyOf validates a value against a union of subschemas: it is valid if it
+	// matches at least one of them. Commonly emitted for nullable/optional fields,
+	// e.g. `anyOf: [{"type": "string"}, {"type": "null"}]`.
+	AnyOf []Definition `json:"anyOf,omitempty"`
 }
 
 func (d *Definition) MarshalJSON() ([]byte, error) {
@@ -140,7 +144,7 @@ func reflectSchema(t reflect.Type, defs map[string]Definition) (*Definition, err
 			return nil, err
 		}
 		d = *object
-	case reflect.Ptr:
+	case reflect.Pointer:
 		definition, err := reflectSchema(t.Elem(), defs)
 		if err != nil {
 			return nil, err
