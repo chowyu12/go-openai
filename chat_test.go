@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -458,8 +459,8 @@ func TestChatRequestOmitEmpty(t *testing.T) {
 	})
 	checks.NoError(t, err)
 
-	// messages is also required so isn't omitted
-	const expected = `{"model":"gpt-4","messages":null}`
+	// messages is also required so isn't omitted; stream is always present
+	const expected = `{"model":"gpt-4","messages":null,"stream":false}`
 	if string(data) != expected {
 		t.Errorf("expected JSON with all empty fields to be %v but was %v", expected, string(data))
 	}
@@ -1147,37 +1148,33 @@ func TestChatCompletionResponseFormatJSONSchema_UnmarshalJSON(t *testing.T) {
 	}
 }
 
-func TestChatCompletionRequest_ExtraBodyMarshalJSON(t *testing.T) {
-	req := openai.ChatCompletionRequest{
-		Model: "qwen-plus",
-		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleUser, Content: "hi"},
-		},
-		Stream: true,
-		StreamOptions: &openai.StreamOptions{
-			IncludeUsage: true,
-		},
-		ExtraBody: map[string]any{
-			"enable_thinking": true,
-		},
+// Keywords the typed jsonschema.Definition doesn't model (anyOf, title, $defs,
+// $ref, ...) must survive an unmarshal → marshal round-trip instead of being
+// silently dropped.
+func TestChatCompletionResponseFormatJSONSchema_UnmarshalPreservesSchema(t *testing.T) {
+	schema := `{"type":"object","title":"Root",` +
+		`"properties":{"summary":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Summary"}},` +
+		`"required":["summary"],"additionalProperties":false}`
+	data := []byte(`{"name":"s","strict":true,"schema":` + schema + `}`)
+
+	var r openai.ChatCompletionResponseFormatJSONSchema
+	if err := r.UnmarshalJSON(data); err != nil {
+		t.Fatalf("UnmarshalJSON() error = %v", err)
 	}
-	data, err := json.Marshal(req)
+
+	got, err := json.Marshal(r.Schema)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("Marshal(schema) error = %v", err)
 	}
-	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
-		t.Fatal(err)
+	var gotMap, wantMap map[string]any
+	if err = json.Unmarshal(got, &gotMap); err != nil {
+		t.Fatalf("unmarshal got = %v", err)
 	}
-	if _, nested := m["extra_body"]; nested {
-		t.Fatal("extra_body must be flattened into the root object")
+	if err = json.Unmarshal([]byte(schema), &wantMap); err != nil {
+		t.Fatalf("unmarshal want = %v", err)
 	}
-	v, ok := m["enable_thinking"]
-	if !ok || v != true {
-		t.Fatalf("enable_thinking = %v, ok=%v", v, ok)
-	}
-	if m["model"] != "qwen-plus" {
-		t.Fatalf("model = %v", m["model"])
+	if !reflect.DeepEqual(gotMap, wantMap) {
+		t.Errorf("schema not preserved:\n got  %s\n want %s", got, schema)
 	}
 }
 
@@ -1237,5 +1234,95 @@ func TestChatCompletionRequest_UnmarshalJSON(t *testing.T) {
 				t.Errorf("UnmarshalJSON() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestChatCompletionRequest_StreamFalsePresent(t *testing.T) {
+	req := openai.ChatCompletionRequest{
+		Model: openai.GPT4,
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleUser, Content: "hello"},
+		},
+		Stream: false,
+	}
+	b, err := json.Marshal(req)
+	checks.NoError(t, err, "marshal error")
+
+	var raw map[string]interface{}
+	err = json.Unmarshal(b, &raw)
+	checks.NoError(t, err, "unmarshal error")
+
+	val, exists := raw["stream"]
+	if !exists {
+		t.Fatal("expected \"stream\" field to be present in JSON, but it was omitted")
+	}
+	if val != false {
+		t.Fatalf("expected \"stream\" to be false, got %v", val)
+	}
+}
+
+func TestChatCompletionRequest_ExtraBodyMarshalJSON(t *testing.T) {
+	req := openai.ChatCompletionRequest{
+		Model: "qwen-plus",
+		Messages: []openai.ChatCompletionMessage{
+			{Role: openai.ChatMessageRoleUser, Content: "hi"},
+		},
+		Stream: true,
+		StreamOptions: &openai.StreamOptions{
+			IncludeUsage: true,
+		},
+		ExtraBody: map[string]any{
+			"enable_thinking": true,
+		},
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(data, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, nested := m["extra_body"]; nested {
+		t.Fatal("extra_body must be flattened into the root object")
+	}
+	v, ok := m["enable_thinking"]
+	if !ok || v != true {
+		t.Fatalf("enable_thinking = %v, ok=%v", v, ok)
+	}
+	if m["model"] != "qwen-plus" {
+		t.Fatalf("model = %v", m["model"])
+	}
+}
+
+func TestChatCompletionMessage_ToolCallsWithoutContent(t *testing.T) {
+	message := openai.ChatCompletionMessage{
+		Role:             openai.ChatMessageRoleAssistant,
+		ReasoningContent: "reasoning",
+		ToolCalls: []openai.ToolCall{{
+			ID: "call_1", Type: openai.ToolTypeFunction,
+			Function: openai.FunctionCall{Name: "lookup", Arguments: `{}`},
+		}},
+	}
+	data, err := json.Marshal(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := body["content"]; exists {
+		t.Fatalf("unexpected content: %s", data)
+	}
+	if string(body["reasoning_content"]) != `"reasoning"` {
+		t.Fatalf("reasoning content was lost: %s", data)
+	}
+	var calls []openai.ToolCall
+	if err := json.Unmarshal(body["tool_calls"], &calls); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(calls, message.ToolCalls) {
+		t.Fatalf("tool calls changed: %s", data)
 	}
 }
