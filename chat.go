@@ -366,7 +366,7 @@ func (r ChatCompletionRequest) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	var m map[string]any
-	if err := json.Unmarshal(base, &m); err != nil {
+	if err = json.Unmarshal(base, &m); err != nil {
 		return nil, err
 	}
 	for k, v := range r.ExtraBody {

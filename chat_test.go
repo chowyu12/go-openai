@@ -1280,7 +1280,7 @@ func TestChatCompletionRequest_ExtraBodyMarshalJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	var m map[string]any
-	if err := json.Unmarshal(data, &m); err != nil {
+	if err = json.Unmarshal(data, &m); err != nil {
 		t.Fatal(err)
 	}
 	if _, nested := m["extra_body"]; nested {
@@ -1309,7 +1309,7 @@ func TestChatCompletionMessage_ToolCallsWithoutContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	var body map[string]json.RawMessage
-	if err := json.Unmarshal(data, &body); err != nil {
+	if err = json.Unmarshal(data, &body); err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := body["content"]; exists {
@@ -1319,7 +1319,7 @@ func TestChatCompletionMessage_ToolCallsWithoutContent(t *testing.T) {
 		t.Fatalf("reasoning content was lost: %s", data)
 	}
 	var calls []openai.ToolCall
-	if err := json.Unmarshal(body["tool_calls"], &calls); err != nil {
+	if err = json.Unmarshal(body["tool_calls"], &calls); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(calls, message.ToolCalls) {
